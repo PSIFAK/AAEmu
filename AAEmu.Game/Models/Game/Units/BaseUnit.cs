@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.GameData;
@@ -37,7 +38,7 @@ namespace AAEmu.Game.Models.Game.Units
         public string Name { get; set; } = string.Empty;
         public SystemFaction Faction { get; set; }
 
-        public virtual float Scale => 1f;
+        public virtual float Scale { get; set; } = 1f;
         
         public Buffs Buffs { get; set; }
         public SkillModifiers SkillModifiersCache { get; set; }
@@ -59,7 +60,7 @@ namespace AAEmu.Game.Models.Game.Units
             if (this.ObjId == target.ObjId)
                 return false;
             var relation = GetRelationStateTo(target);
-            var zone = ZoneManager.Instance.GetZoneByKey(target.Position.ZoneId);
+            var zone = ZoneManager.Instance.GetZoneByKey(target.Transform.ZoneId);
             if (this is Character me && target is Character other)
             {
                 var trgIsFlagged = other.Buffs.CheckBuff((uint)BuffConstants.RETRIBUTION_BUFF);
@@ -115,5 +116,21 @@ namespace AAEmu.Game.Models.Game.Units
         }
 
         public virtual void InterruptSkills() {}
+
+        public virtual bool UnitIsVisible(BaseUnit unit)
+        {
+            if (unit == null)
+                return false;
+
+            //Some weird stuff happens here when in an invalid region..
+            return Region?.GetNeighbors()?.Any(o => (o?.Id ?? 0) == (unit.Region?.Id ?? 0)) ?? false;
+        }
+
+        public override string DebugName()
+        {
+            if (string.IsNullOrWhiteSpace(Name))
+                return base.DebugName();
+            return "(" + ObjId.ToString() + ") - " + Name;
+        }
     }
 }

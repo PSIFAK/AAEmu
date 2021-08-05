@@ -8,8 +8,6 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
 {
     public class Anim : SpecialEffectAction
     {
-        private static Logger _log = LogManager.GetCurrentClassLogger();
-
         public override void Execute(Unit caster,
             SkillCaster casterObj,
             BaseUnit target,
@@ -23,7 +21,7 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
             int value3,
             int value4)
         {
-            _log.Warn("value1 {0}, value2 {1}, value3 {2}, value4 {3}", value1, value2, value3, value4);
+            _log.Trace("value1 {0}, value2 {1}, value3 {2}, value4 {3}", value1, value2, value3, value4);
         }
     }
 }

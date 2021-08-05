@@ -8,7 +8,7 @@ namespace AAEmu.Game.Core.Packets.Proxy
 {
     public class FinishStatePacket : GamePacket
     {
-        public FinishStatePacket() : base(0x001, 2)
+        public FinishStatePacket() : base(PPOffsets.FinishStatePacket, 2)
         {
         }
 
@@ -24,7 +24,7 @@ namespace AAEmu.Game.Core.Packets.Proxy
                     var levelname = string.Empty;
                     if (Connection.ActiveChar != null)
                     {
-                        levelname = ZoneManager.Instance.GetZoneByKey(Connection.ActiveChar.Position.ZoneId).Name;
+                        levelname = ZoneManager.Instance.GetZoneByKey(Connection.ActiveChar.Transform.ZoneId).Name;
                     }
                     else
                     {
@@ -62,6 +62,7 @@ namespace AAEmu.Game.Core.Packets.Proxy
                     Connection.SendPacket(new ChangeStatePacket(state + 1));
                     break;
                 case 7:
+                    Connection.SendPacket(new SCUpdatePremiumPointPacket(1, 1, 1));
                     break;
                 default:
                     _log.Info("Unknown state: {0}", state);

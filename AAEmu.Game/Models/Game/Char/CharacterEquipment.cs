@@ -146,7 +146,7 @@ namespace AAEmu.Game.Models.Game.Char
                 return;
 
             // Clear any existing armor grade buffs
-            Buffs.RemoveBuffs((uint) BuffConstants.ARMOR_BUFF_TAG, 1);
+            Buffs.RemoveBuffs((uint) BuffConstants.ARMOR_BUFF_TAG, 10);
 
             // Get armor pieces by kind
             var armorPieces = new Dictionary<ArmorType, List<Armor>>();
@@ -277,7 +277,7 @@ namespace AAEmu.Game.Models.Game.Char
                 if (itemAddedBuff != null) // add buff from equipped item
                 {
                     var newEffect =
-                        new Buff(this, this, new SkillCasterUnit(), itemAddedBuff, null, DateTime.UtcNow)
+                        new Buff(this, this, new SkillCasterUnit(), itemAddedBuff, null, DateTime.Now)
                         {
                             AbLevel = (uint)itemAdded.Template.Level
                         };
@@ -288,6 +288,7 @@ namespace AAEmu.Game.Models.Game.Char
 
             if(itemAdded == null && itemRemoved == null) // This is the first load check to apply buffs for equipped items. 
             {
+                Buffs.RemoveBuffs((uint)BuffConstants.EQUIPMENT_BUFF_TAG, 20);
                 foreach (var item in Equipment.Items)
                 {
                     if(item.Template.BuffId != 0)
@@ -296,7 +297,7 @@ namespace AAEmu.Game.Models.Game.Char
                         if (buffTemplate == null)
                             buffTemplate = SkillManager.Instance.GetBuffTemplate(item?.Template.BuffId ?? 0);
                         var newEffect =
-                            new Buff(this, this, new SkillCasterUnit(), buffTemplate, null, DateTime.UtcNow)
+                            new Buff(this, this, new SkillCasterUnit(), buffTemplate, null, DateTime.Now)
                             {
                                 AbLevel = (uint)item.Template.Level
                             };

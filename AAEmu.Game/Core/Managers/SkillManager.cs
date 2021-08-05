@@ -6,6 +6,7 @@ using AAEmu.Commons.Utils;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Buffs;
 using AAEmu.Game.Models.Game.Skills.Effects;
+using AAEmu.Game.Models.Game.Skills.Effects.Enums;
 using AAEmu.Game.Models.Game.Skills.Static;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
@@ -143,7 +144,14 @@ namespace AAEmu.Game.Core.Managers
         {
             _log.Trace("Get Effect Template: type = {0}, id = {1}", type, id);
             
-            return _effects[type][id];
+            if (_effects.TryGetValue(type, out var value))
+            {
+                if(value.TryGetValue(id, out var res))
+                {
+                    return res;
+                }
+            }
+            return null;
         }
 
         public List<uint> GetBuffTags(uint buffId)
@@ -335,7 +343,7 @@ namespace AAEmu.Game.Core.Managers
                             var value = reader.GetString("cooldown_tag_id", "0");
                             template.CooldownTagId = value.Contains("null") ? 0 : int.Parse(value);
                             value = reader.GetString("skill_controller_id", "0");
-                            template.SkillControllerId = value.Contains("null") ? 0 : int.Parse(value);
+                            template.SkillControllerId = value.Contains("null") ? 0 : uint.Parse(value);
                             template.RepeatCount = reader.GetInt32("repeat_count");
                             template.RepeatTick = reader.GetInt32("repeat_tick");
                             template.ToggleBuffId = reader.GetUInt32("toggle_buff_id", 0);
@@ -1373,6 +1381,10 @@ namespace AAEmu.Game.Core.Managers
 
                             var template = new SkillEffect();
                             var effectId = reader.GetUInt32("effect_id");
+                            
+                            //for easier debugging
+                            template.EffectId = effectId;
+
                             var type = _types[effectId];
                             if (_effects.ContainsKey(type.Type))
                                 template.Template = _effects[type.Type][type.ActualId];

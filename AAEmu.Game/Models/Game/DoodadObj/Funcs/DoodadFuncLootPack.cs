@@ -1,12 +1,10 @@
 ﻿using System;
+
 using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
-using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Units;
-using AAEmu.Game.Utils;
 
 namespace AAEmu.Game.Models.Game.DoodadObj.Funcs
 {
@@ -18,10 +16,13 @@ namespace AAEmu.Game.Models.Game.DoodadObj.Funcs
         {
             _log.Debug("DoodadFuncLootPack : LootPackId {0}, SkillId {1}", LootPackId, skillId);
 
-            Character character = (Character)caster;
-            LootPacks[] lootPacks = ItemManager.Instance.GetLootPacks(LootPackId);
-            Random itemQuantity = new Random();
-            var count = 0;
+            owner.ToPhaseAndUse = false;
+            var character = (Character)caster;
+            if (character == null)
+                return;
+
+            var lootPacks = ItemManager.Instance.GetLootPacks(LootPackId);
+            var itemQuantity = new Random();
             if (character.Inventory.Bag.FreeSlotCount >= lootPacks.Length)
             {
                 foreach (var pack in lootPacks)
@@ -37,13 +38,15 @@ namespace AAEmu.Game.Models.Game.DoodadObj.Funcs
                     //_log.Warn(pack.AlwaysDrop);
 
                     //TODO create dropRate chance
-                    count = itemQuantity.Next(pack.MinAmount, pack.MaxAmount);
+                    var count = itemQuantity.Next(pack.MinAmount, pack.MaxAmount);
                     character.Inventory.Bag.AcquireDefaultItem(ItemTaskType.AutoLootDoodadItem, pack.ItemId, count);
                 }
-                // DoodadManager.Instance.TriggerPhases(GetType().Name, caster, owner, skillId);
+                owner.ToPhaseAndUse = true;
             }
             else
-                character.SendErrorMessage(Error.ErrorMessageType.BagFull);
+            {
+                character.SendErrorMessage(ErrorMessageType.BagFull);
+            }
         }
     }
 }

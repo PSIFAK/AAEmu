@@ -1,4 +1,4 @@
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Network.Stream;
 using AAEmu.Game.Models.Game.DoodadObj;
@@ -11,7 +11,7 @@ namespace AAEmu.Game.Core.Packets.S2C
         private readonly int _next;
         private readonly Doodad[] _doodads;
 
-        public TCDoodadStreamPacket(int id, int next, Doodad[] doodads) : base(0x02)
+        public TCDoodadStreamPacket(int id, int next, Doodad[] doodads) : base(TCOffsets.TCDoodadStreamPacket)
         {
             _id = id;
             _next = next;
@@ -27,10 +27,11 @@ namespace AAEmu.Game.Core.Packets.S2C
             {
                 stream.WriteBc(doodad.ObjId);
                 stream.Write(doodad.TemplateId);
-                stream.WritePosition(doodad.Position.X, doodad.Position.Y, doodad.Position.Z);
-                stream.Write(Helpers.ConvertRotation(doodad.Position.RotationX));
-                stream.Write(Helpers.ConvertRotation(doodad.Position.RotationY));
-                stream.Write(Helpers.ConvertRotation(doodad.Position.RotationZ));
+                stream.WritePosition(doodad.Transform.World.Position.X, doodad.Transform.World.Position.Y, doodad.Transform.World.Position.Z);
+                var (roll, pitch, yaw) = doodad.Transform.World.ToRollPitchYawShorts();
+                stream.Write(roll);
+                stream.Write(pitch);
+                stream.Write(yaw);
                 stream.Write(doodad.Scale);
                 stream.Write(doodad.CurrentPhaseId); // doodad_func_groups Id
                 stream.Write(doodad.TimeLeft); // growing

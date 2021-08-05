@@ -23,7 +23,7 @@ namespace AAEmu.Game.Core.Network.Login
 
         public override void OnConnect(Session session)
         {
-            _log.Info("Connect to {0} established, session id: {1}", session.Ip.ToString(), session.Id.ToString(CultureInfo.InvariantCulture));
+            _log.Info("Connect to {0} established, session id: {1}", session.Ip.ToString(), session.SessionId.ToString(CultureInfo.InvariantCulture));
             var con = new LoginConnection(session);
             con.OnConnect();
             LoginNetwork.Instance.SetConnection(con);
@@ -31,7 +31,7 @@ namespace AAEmu.Game.Core.Network.Login
 
         public override void OnDisconnect(Session session)
         {
-            _log.Info("Connect to LoginServer losted");
+            _log.Info("Connect to LoginServer has been lost");
             LoginNetwork.Instance.SetConnection(null);
             session.Close();
 

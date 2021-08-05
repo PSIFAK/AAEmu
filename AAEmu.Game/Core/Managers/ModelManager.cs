@@ -23,8 +23,11 @@ namespace AAEmu.Game.Core.Managers
 
             if (!_models.ContainsKey(modelType.SubType) || !_models[modelType.SubType].ContainsKey(modelType.SubId))
                 return null;
-            
-            return (ActorModel) _models[modelType.SubType][modelType.SubId];
+
+            var model = _models[modelType.SubType][modelType.SubId];
+            if (model is ActorModel actorModel)
+                return actorModel;
+            return null;
         }
         
         public ShipModel GetShipModel(uint modelId)
@@ -37,7 +40,10 @@ namespace AAEmu.Game.Core.Managers
             if (!_models.ContainsKey(modelType.SubType) || !_models[modelType.SubType].ContainsKey(modelType.SubId))
                 return null;
             
-            return (ShipModel) _models[modelType.SubType][modelType.SubId];
+            var model = _models[modelType.SubType][modelType.SubId];
+            if (model is ShipModel shipModel)
+                return shipModel;
+            return null;
         }
         
         public void Load()
@@ -93,6 +99,8 @@ namespace AAEmu.Game.Core.Managers
                                 MassBoxSizeX = reader.GetFloat("mass_box_size_x"),
                                 MassBoxSizeY = reader.GetFloat("mass_box_size_y"),
                                 MassBoxSizeZ = reader.GetFloat("mass_box_size_z"),
+                                WaterDensity = reader.GetFloat("water_density",1f),
+                                WaterResistance = reader.GetFloat("water_resistance",1f),
                                 SteerVel = reader.GetFloat("steer_vel"),
                                 Accel = reader.GetFloat("accel"),
                                 ReverseAccel = reader.GetFloat("reverse_accel"),

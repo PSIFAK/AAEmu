@@ -15,8 +15,6 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
 {
     public class ItemSocketing : SpecialEffectAction
     {
-        private static Logger _log = LogManager.GetCurrentClassLogger();
-
         public override void Execute(Unit caster,
             SkillCaster casterObj,
             BaseUnit target,
@@ -80,8 +78,10 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
 
             // Add gem to proper slot
             var gemRoll = Rand.Next(0, 10000);
-            var gemChance = ItemManager.Instance.GetSocketChance(gemCount);
-
+            /// TODO : REMOVE THIS
+            // var gemChance = ItemManager.Instance.GetSocketChance(gemCount);
+            var gemChance = int.MaxValue;
+            
             byte result = 0;
             if (gemRoll < gemChance)
             {

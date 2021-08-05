@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
@@ -14,8 +14,6 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
 {
     public class ItemCapScaleReset : SpecialEffectAction
     {
-        private static Logger _log = LogManager.GetCurrentClassLogger();
-
         public override void Execute(Unit caster,
             SkillCaster casterObj,
             BaseUnit target,
@@ -51,9 +49,8 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
             }
 
             var targetItem = owner.Inventory.GetItemById(skillTargetItem.Id);
-            var temperItem = owner.Inventory.GetItemById(temperSkillItem.ItemId);
 
-            if (targetItem == null || temperItem == null)
+            if (targetItem == null)
             {
                 return;
             }
@@ -68,7 +65,6 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
             equipItem.TemperPhysical = 0;
             equipItem.TemperMagical = 0;
 
-            temperItem._holdingContainer.ConsumeItem(ItemTaskType.EnchantPhysical, temperItem.TemplateId, 1, temperItem);
             owner.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.EnchantPhysical, new List<ItemTask>() { new ItemUpdate(equipItem) }, new List<ulong>()));
             // No indication ingame that the item's tempering has been successfully resetted 
             owner.SendMessage(ChatType.System, "Tempering reset");

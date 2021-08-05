@@ -2,6 +2,7 @@
 
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
+using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Utils;
 
@@ -11,8 +12,6 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
 {
     public class TeleportToUnit : SpecialEffectAction
     {
-        private static Logger _log = LogManager.GetCurrentClassLogger();
-
         public override void Execute(Unit caster,
             SkillCaster casterObj,
             BaseUnit target,
@@ -32,16 +31,20 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
                 //this shouldn't happen?
                 return;
             }
-            if (caster is Character character)
+
+            var pos = target.Transform.World.Position;
+            var distance = (float)value1 / 1000f;
+            var (endX, endY) = MathUtil.AddDistanceToFront(distance, target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.ToRollPitchYawDegrees().Z);
+            
+            switch (caster)
             {
-                var pos = target.Position;
-
-                var distance = (float)value1 / 1000f;
-                var rot = MathUtil.ConvertDegreeToDirection(MathUtil.ConvertDirectionToDegree(pos.RotationZ) + (float)value3);
-                var (endX, endY) = MathUtil.AddDistanceToFront(distance, target.Position.X, target.Position.Y, rot);
-
-                character.SendPacket(new SCBlinkUnitPacket(caster.ObjId, 0f, 0f, endX, endY, pos.Z));
-                
+                case Character character:
+                    character.SendPacket(new SCBlinkUnitPacket(caster.ObjId, 0f, 0f, endX, endY, pos.Z));
+                    break;
+                case Npc npc:
+                    npc.MoveTowards(pos, 10000);
+                    npc.StopMovement();
+                    break;
             }
         }
     }

@@ -1,58 +1,67 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Numerics;
 using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
+using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
+using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.World;
+using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Models.Tasks.Doodads;
+using AAEmu.Game.Utils.DB;
+using AAEmu.Game.Utils;
 using NLog;
 
 namespace AAEmu.Game.Models.Game.DoodadObj
 {
     public class Doodad : BaseUnit
     {
-        private float _scale;
-
         private static Logger _log = LogManager.GetCurrentClassLogger();
+        private float _scale;
         public uint TemplateId { get; set; }
+        public uint DbId { get; set; }
+        public bool IsPersistent { get; set; } = false;
         public DoodadTemplate Template { get; set; }
         public override float Scale => _scale;
         public uint FuncGroupId { get; set; }
         public string FuncType { get; set; }
         public ulong ItemId { get; set; }
+        public ulong UccId { get; set; }
+        public uint ItemTemplateId { get; set; }
         public DateTime GrowthTime { get; set; }
         public DateTime PlantTime { get; set; }
         public uint OwnerId { get; set; }
         public uint OwnerObjId { get; set; }
         public uint ParentObjId { get; set; }
         public DoodadOwnerType OwnerType { get; set; }
-        public byte AttachPoint { get; set; }
-        public Point AttachPosition { get; set; }
+        public AttachPointKind AttachPoint { get; set; }
         public uint DbHouseId { get; set; }
         public int Data { get; set; }
         public uint QuestGlow { get; set; } //0 off // 1 on
-
         public DoodadSpawner Spawner { get; set; }
         public DoodadFuncTask FuncTask { get; set; }
-
         public uint TimeLeft => GrowthTime > DateTime.Now ? (uint)(GrowthTime - DateTime.Now).TotalMilliseconds : 0; // TODO formula time of phase
-        public bool cancelPhasing { get; set; }
-        
+        public bool ToPhaseAndUse { get; set; }
+        public int PhaseRatio { get; set; }
+        public int CumulativePhaseRatio { get; set; }
         public uint CurrentPhaseId { get; set; }
         public uint OverridePhase { get; set; }
+        private bool _deleted = false;
+        public VehicleSeat Seat { get; set; }
 
         public Doodad()
         {
             _scale = 1f;
-            Position = new Point();
             PlantTime = DateTime.MinValue;
-            AttachPoint = 255;
+            AttachPoint = AttachPointKind.System;
+            Seat = new VehicleSeat(this);
         }
 
         public void SetScale(float scale)
@@ -80,22 +89,24 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             // Apply them
             var nextFunc = 0;
             var isUse = false;
+            ToPhaseAndUse = false;
+
             try
             {
                 foreach (var func in funcs)
                 {
-                    if (func.SkillId > 0 && func.SkillId == skillId)
+                    if ((func.SkillId <= 0 || func.SkillId != skillId) && func.SkillId != 0)
+                        continue;
+
+                    func.Use(unit, this, skillId, func.NextPhase);
+
+                    if (ToPhaseAndUse)
                     {
-                        func.Use(unit, this, skillId, func.NextPhase);
-                        if (func.NextPhase != 0) nextFunc = func.NextPhase;
-                        if (func.FuncType == "DoodadFuncUse") isUse = true;
+                        isUse = true;
+                        nextFunc = func.NextPhase;
                     }
-                    else if (func.SkillId == 0)
-                    {
-                        func.Use(unit, this, skillId);
-                        if (func.NextPhase != 0) nextFunc = func.NextPhase;
-                        if (func.FuncType == "DoodadFuncUse") isUse = true;
-                    }
+
+                    break;
                 }
             }
             catch (Exception e)
@@ -120,7 +131,7 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             recursionDepth++;
             if (recursionDepth % 10 == 0)
                 _log.Warn("Doodad {0} (TemplateId {1}) might be phasing indefinitely. {2} recursionDepth.", ObjId, TemplateId, recursionDepth);
-            
+
             _log.Trace("Doing phase {0}", CurrentPhaseId);
             var phaseFuncs = DoodadManager.Instance.GetPhaseFunc(CurrentPhaseId);
 
@@ -144,6 +155,9 @@ namespace AAEmu.Game.Models.Game.DoodadObj
                 CurrentPhaseId = OverridePhase;
                 DoPhase(unit, skillId, recursionDepth);
             }
+
+            if (!_deleted)
+                Save();
         }
 
         /// <summary>
@@ -157,12 +171,16 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             if (funcGroupId == -1)
             {
                 // Delete doodad
-                // Delete();
+                Delete();
             }
             else
             {
                 CurrentPhaseId = (uint)funcGroupId;
+                PhaseRatio = Rand.Next(0, 10000);
+                CumulativePhaseRatio = 0;
                 DoPhase(unit, skillId);
+
+                _log.Debug("SCDoodadPhaseChangedPacket : CurrentPhaseId {0}", CurrentPhaseId);
                 BroadcastPacket(new SCDoodadPhaseChangedPacket(this), true);
             }
         }
@@ -179,8 +197,13 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             else
             {
                 CurrentPhaseId = (uint)funcGroupId;
+                PhaseRatio = Rand.Next(0, 10000);
+                CumulativePhaseRatio = 0;
                 DoPhase(unit, skillId);
+
+                _log.Debug("SCDoodadPhaseChangedPacket : CurrentPhaseId {0}", CurrentPhaseId);
                 BroadcastPacket(new SCDoodadPhaseChangedPacket(this), true);
+
                 Use(unit, skillId, recursionDepth);
             }
         }
@@ -196,9 +219,9 @@ namespace AAEmu.Game.Models.Game.DoodadObj
 
             return startGroupIds;
         }
-        
+
         public uint GetFuncGroupId()
-        {   
+        {
             foreach (var funcGroup in Template.FuncGroups)
             {
                 if (funcGroup.GroupKindId == DoodadFuncGroups.DoodadFuncGroupKind.Start)
@@ -207,25 +230,28 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             return 0;
         }
 
-        public override void BroadcastPacket(GamePacket packet, bool self)
+        public void OnSkillHit(Unit caster, uint skillId)
         {
-            foreach (var character in WorldManager.Instance.GetAround<Character>(this))
-                character.SendPacket(packet);
+            var funcs = DoodadManager.Instance.GetFuncsForGroup(CurrentPhaseId);
+            foreach (var func in funcs)
+            {
+                if (func.FuncType == "DoodadFuncSkillHit")
+                {
+                    Use(null, skillId);
+                }
+            }
         }
 
         public override void AddVisibleObject(Character character)
         {
             character.SendPacket(new SCDoodadCreatedPacket(this));
+            base.AddVisibleObject(character);
         }
 
         public override void RemoveVisibleObject(Character character)
         {
-            if (character.CurrentTarget != null && character.CurrentTarget == this)
-            {
-                character.CurrentTarget = null;
-                character.SendPacket(new SCTargetChangedPacket(character.ObjId, 0));
-            }
-            character.SendPacket(new SCDoodadRemovedPacket( ObjId ));
+            base.RemoveVisibleObject(character);
+            character.SendPacket(new SCDoodadRemovedPacket(ObjId));
         }
 
         public PacketStream Write(PacketStream stream)
@@ -234,28 +260,30 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             stream.Write(TemplateId); //The template id needed for that object, the client then uses the template configurations, not the server
             stream.WriteBc(OwnerObjId); //The creator of the object
             stream.WriteBc(ParentObjId); //Things like boats or cars,
-            stream.Write(AttachPoint); // attachPoint, relative to the parentObj, (Door or window on a house)
-            if (AttachPoint != 255 && AttachPosition != null)
+            stream.Write((byte)AttachPoint); // attachPoint, relative to the parentObj (Door or window on a house, seats on carriage, etc.)
+            if ((AttachPoint > 0) || (ParentObjId > 0))
             {
-                stream.WritePosition(AttachPosition.X, AttachPosition.Y, AttachPosition.Z);
-                stream.Write(Helpers.ConvertRotation(AttachPosition.RotationX)); //''
-                stream.Write(Helpers.ConvertRotation(AttachPosition.RotationY)); //''
-                stream.Write(Helpers.ConvertRotation(AttachPosition.RotationZ)); //''
+                stream.WritePosition(Transform.Local.Position.X, Transform.Local.Position.Y, Transform.Local.Position.Z);
+                var (roll, pitch, yaw) = Transform.Local.ToRollPitchYawShorts();
+                stream.Write(roll);
+                stream.Write(pitch);
+                stream.Write(yaw);
             }
             else
             {
-                stream.WritePosition(Position.X, Position.Y, Position.Z); //self explanatory
-                stream.Write(Helpers.ConvertRotation(Position.RotationX)); //''
-                stream.Write(Helpers.ConvertRotation(Position.RotationY)); //''
-                stream.Write(Helpers.ConvertRotation(Position.RotationZ)); //''
+                stream.WritePosition(Transform.World.Position.X, Transform.World.Position.Y, Transform.World.Position.Z);
+                var(roll, pitch, yaw) = Transform.World.ToRollPitchYawShorts();
+                stream.Write(roll);
+                stream.Write(pitch);
+                stream.Write(yaw);
             }
 
             stream.Write(Scale); //The size of the object
             stream.Write(false); // hasLootItem
             stream.Write(CurrentPhaseId); // doodad_func_group_id
             stream.Write(OwnerId); // characterId (Database relative)
-            stream.Write(ItemId); // ?? must be ulong though (ItemId seems to be the only ulong)
-            stream.Write(0u); //??type1
+            stream.Write(UccId);
+            stream.Write(ItemTemplateId);
             stream.Write(0u); //??type2
             stream.Write(TimeLeft); // growing
             stream.Write(PlantTime); //Time stamp of when it was planted
@@ -267,6 +295,67 @@ namespace AAEmu.Game.Models.Game.DoodadObj
             stream.Write(Data); // data
 
             return stream;
+        }
+
+        public override void Delete()
+        {
+            base.Delete();
+            _deleted = true;
+
+            if (DbId > 0)
+            {
+                using (var connection = MySQL.CreateConnection())
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = "DELETE FROM doodads WHERE id = @id";
+                        command.Parameters.AddWithValue("@id", DbId);
+                        command.Prepare();
+                        command.ExecuteNonQuery();
+                    }
+                }
+            }
+        }
+
+        public void Save()
+        {
+            if (!IsPersistent)
+                return;
+            DbId = DbId > 0 ? DbId : DoodadIdManager.Instance.GetNextId();
+            using (var connection = MySQL.CreateConnection())
+            {
+                using (var command = connection.CreateCommand())
+                {
+                    var parentDoodadId = 0u;
+                    if ((Transform?.Parent?.GameObject is Doodad pDoodad) && (pDoodad.DbId > 0))
+                        parentDoodadId = pDoodad.DbId;
+                    
+                    command.CommandText = 
+                        "REPLACE INTO doodads (`id`, `owner_id`, `owner_type`, `template_id`, `current_phase_id`, `plant_time`, `growth_time`, `phase_time`, `x`, `y`, `z`, `roll`, `pitch`, `yaw`, `item_id`, `house_id`, `parent_doodad`, `item_template_id`) " +
+                        "VALUES(@id, @owner_id, @owner_type, @template_id, @current_phase_id, @plant_time, @growth_time, @phase_time, @x, @y, @z, @roll, @pitch, @yaw, @item_id, @house_id, @parent_doodad, @item_template_id)";
+                    command.Parameters.AddWithValue("@id", DbId);
+                    command.Parameters.AddWithValue("@owner_id", OwnerId);
+                    command.Parameters.AddWithValue("@owner_type", OwnerType);
+                    command.Parameters.AddWithValue("@template_id", TemplateId);
+                    command.Parameters.AddWithValue("@current_phase_id", CurrentPhaseId);
+                    command.Parameters.AddWithValue("@plant_time", PlantTime);
+                    command.Parameters.AddWithValue("@growth_time", GrowthTime);
+                    command.Parameters.AddWithValue("@phase_time", DateTime.MinValue);
+                    // We save it's world position, and upon loading, we re-parent things depending on the data
+                    command.Parameters.AddWithValue("@x", Transform.World.Position.X);
+                    command.Parameters.AddWithValue("@y", Transform.World.Position.Y);
+                    command.Parameters.AddWithValue("@z", Transform.World.Position.Z);
+                    command.Parameters.AddWithValue("@roll", Transform.World.Rotation.X);
+                    command.Parameters.AddWithValue("@pitch", Transform.World.Rotation.Y);
+                    command.Parameters.AddWithValue("@yaw", Transform.World.Rotation.Z);
+                    command.Parameters.AddWithValue("@item_id", ItemId);
+                    command.Parameters.AddWithValue("@house_id", DbHouseId);
+                    command.Parameters.AddWithValue("@parent_doodad", parentDoodadId);
+                    command.Parameters.AddWithValue("@item_template_id", ItemTemplateId);
+                    command.Prepare();
+                    command.ExecuteNonQuery();
+                }
+            }
         }
     }
 }

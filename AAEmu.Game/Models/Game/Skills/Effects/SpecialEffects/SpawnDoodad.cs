@@ -1,15 +1,12 @@
-using System;
+﻿using System;
+
 using AAEmu.Game.Core.Managers.UnitManagers;
-using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.Units;
-using NLog;
 
 namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
 {
     public class SpawnDoodad : SpecialEffectAction
     {
-        protected static Logger _log = LogManager.GetCurrentClassLogger();
-        
         public override void Execute(Unit caster,
             SkillCaster casterObj,
             BaseUnit target,
@@ -24,7 +21,7 @@ namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects
             int value4)
         {
             var doodad = DoodadManager.Instance.Create(0, (uint) doodadId, caster);
-            doodad.Position = caster.Position.Clone();
+            doodad.Transform = caster.Transform.CloneDetached(doodad);
             doodad.Spawn();
         }
     }

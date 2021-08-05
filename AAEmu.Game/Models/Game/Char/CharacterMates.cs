@@ -7,6 +7,7 @@ using AAEmu.Game.Models.Game.Items.Templates;
 using AAEmu.Game.Models.Game.Mate;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills;
+using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Utils;
 using MySql.Data.MySqlClient;
@@ -51,7 +52,7 @@ namespace AAEmu.Game.Models.Game.Char
                 Name = LocalizationManager.Instance.Get("npcs","name",npctemplate.Id,npctemplate.Name), // npctemplate.Name,
                 Owner = Owner.Id,
                 Mileage = 0,
-                Xp = ExpirienceManager.Instance.GetExpForLevel(50, true),
+                Xp = ExpirienceManager.Instance.GetExpForLevel(npctemplate.Level, true),
                 Hp = 9999,
                 Mp = 9999,
                 UpdatedAt = DateTime.Now,
@@ -63,9 +64,11 @@ namespace AAEmu.Game.Models.Game.Char
 
         public void SpawnMount(SkillItem skillData)
         {
-            if (MateManager.Instance.GetActiveMate(Owner.ObjId) != null)
+            // Check if we had already spawned something
+            var oldMate = MateManager.Instance.GetActiveMate(Owner.ObjId);
+            if (oldMate != null)
             {
-                DespawnMate(0);
+                DespawnMate(oldMate.TlId);
                 return;
             }
 
@@ -77,9 +80,9 @@ namespace AAEmu.Game.Models.Game.Char
             var template = NpcManager.Instance.GetTemplate(npcId);
             var tlId = (ushort)TlIdManager.Instance.GetNextId();
             var objId = ObjectIdManager.Instance.GetNextId();
-            var mateDbInfo = GetMateInfo(skillData.ItemId) ?? CreateNewMate(skillData.ItemId, template); // TODO - new name
+            var mateDbInfo = GetMateInfo(skillData.ItemId) ?? CreateNewMate(skillData.ItemId, template);
 
-            var mount = new Mount
+            var mount = new Units.Mate
             {
                 ObjId = objId,
                 TlId = tlId,
@@ -90,27 +93,39 @@ namespace AAEmu.Game.Models.Game.Char
                 ModelId = template.ModelId,
                 Faction = Owner.Faction,
                 Level = (byte)mateDbInfo.Level,
-                Hp = mateDbInfo.Hp,
-                Mp = mateDbInfo.Mp,
-                Position = Owner.Position.Clone(),
+                Hp = mateDbInfo.Hp > 0 ? mateDbInfo.Hp : 100,
+                Mp = mateDbInfo.Mp > 0 ? mateDbInfo.Mp : 100,
                 OwnerObjId = Owner.ObjId,
-
                 Id = mateDbInfo.Id,
                 ItemId = mateDbInfo.ItemId,
                 UserState = 1, // TODO
                 Exp = mateDbInfo.Xp,
                 Mileage = mateDbInfo.Mileage,
                 SpawnDelayTime = 0, // TODO
+                DbInfo = mateDbInfo
             };
+            mount.Transform = Owner.Transform.CloneDetached(mount);
+
             foreach (var skill in MateManager.Instance.GetMateSkills(npcId))
-            {
                 mount.Skills.Add(skill);
+            
+            foreach (var buffId in template.Buffs)
+            {
+                var buff = SkillManager.Instance.GetBuffTemplate(buffId);
+                if (buff == null)
+                    continue;
+
+                var obj = new SkillCasterUnit(mount.ObjId);
+                buff.Apply(mount, obj, mount, null, null, new EffectSource(), null, DateTime.Now);
             }
-
-            var (newX, newY) = MathUtil.AddDistanceToFront(3, mount.Position.X, mount.Position.Y, mount.Position.RotationZ);
-            mount.Position.X = newX;
-            mount.Position.Y = newY;
-
+            
+            // TODO: Load Pet Gear
+            
+            // Cap stats to their max
+            mount.Hp = Math.Min(mount.Hp, mount.MaxHp);
+            mount.Mp = Math.Min(mount.Mp, mount.MaxMp);
+            
+            mount.Transform.Local.AddDistanceToFront(3f);
             MateManager.Instance.AddActiveMateAndSpawn(Owner, mount, item);
         }
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Net;
 using AAEmu.Commons.Network.Core;
 using AAEmu.Commons.Utils;
@@ -18,16 +19,16 @@ namespace AAEmu.Game.Core.Network.Login
         {
             _handler = new LoginProtocolHandler();
 
-            RegisterPacket(0x00, typeof(LGRegisterGameServerPacket));
-            RegisterPacket(0x01, typeof(LGPlayerEnterPacket));
-            RegisterPacket(0x02, typeof(LGPlayerReconnectPacket));
-            RegisterPacket(0x03, typeof(LGRequestInfoPacket));
+            RegisterPacket(LGOffsets.LGRegisterGameServerPacket, typeof(LGRegisterGameServerPacket));
+            RegisterPacket(LGOffsets.LGPlayerEnterPacket, typeof(LGPlayerEnterPacket));
+            RegisterPacket(LGOffsets.LGPlayerReconnectPacket, typeof(LGPlayerReconnectPacket));
+            RegisterPacket(LGOffsets.LGRequestInfoPacket, typeof(LGRequestInfoPacket));
         }
 
         public void Start()
         {
             var config = AppConfiguration.Instance.LoginNetwork;
-            _client = new Client(IPAddress.Parse(config.Host), config.Port, _handler);
+            _client = new Client(Dns.GetHostAddresses(config.Host).First(), config.Port, _handler);
             _client.ConnectAsync();
 
         }

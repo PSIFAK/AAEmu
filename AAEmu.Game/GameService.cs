@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.Id;
+using AAEmu.Game.Core.Managers.Stream;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Game;
@@ -21,7 +22,7 @@ namespace AAEmu.Game
     {
         private static Logger _log = LogManager.GetCurrentClassLogger();
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
             _log.Info("Starting daemon: AAEmu.Game");
 
@@ -39,6 +40,7 @@ namespace AAEmu.Game
             TradeIdManager.Instance.Initialize();
 
             ItemIdManager.Instance.Initialize();
+            DoodadIdManager.Instance.Initialize();
             ChatManager.Instance.Initialize();
             CharacterIdManager.Instance.Initialize();
             FamilyIdManager.Instance.Initialize();
@@ -53,10 +55,15 @@ namespace AAEmu.Game
             LaborPowerManager.Instance.Initialize();
             QuestIdManager.Instance.Initialize();
             MailIdManager.Instance.Initialize();
+            UccIdManager.Instance.Initialize();
 
             GameDataManager.Instance.LoadGameData();
             ZoneManager.Instance.Load();
             WorldManager.Instance.Load();
+            var heightmapTask = Task.Run(() =>
+            {
+                WorldManager.Instance.LoadHeightmaps();
+            });
             QuestManager.Instance.Load();
 
             ShipyardManager.Instance.Load();
@@ -88,36 +95,50 @@ namespace AAEmu.Game
             FriendMananger.Instance.Load();
             ModelManager.Instance.Load();
 
+            AIManager.Instance.Initialize();
             NpcManager.Instance.Load();
             DoodadManager.Instance.Load();
             HousingManager.Instance.Load();
             TransferManager.Instance.Load();
+            GimmickManager.Instance.Load();
 
             SpawnManager.Instance.Load();
-            SpawnManager.Instance.SpawnAll();
-            HousingManager.Instance.SpawnAll();
-            TransferManager.Instance.SpawnAll();
 
             AccessLevelManager.Instance.Load();
             CashShopManager.Instance.Load();
+            UccManager.Instance.Load();
             ScriptCompiler.Compile();
 
             TimeManager.Instance.Start();
             TaskManager.Instance.Start();
-            GameNetwork.Instance.Start();
-            StreamNetwork.Instance.Start();
-            LoginNetwork.Instance.Start();
-
+            
             SaveManager.Instance.Initialize();
             AreaTriggerManager.Instance.Initialize();
             SpecialtyManager.Instance.Initialize();
             BoatPhysicsManager.Instance.Initialize();
+            TransferManager.Instance.Initialize();
+            GimmickManager.Instance.Initialize();
             SlaveManager.Instance.Initialize();
+            CashShopManager.Instance.Initialize();
             GameDataManager.Instance.PostLoadGameData();
+
+            await heightmapTask;
+            
+            var spawnSw = new Stopwatch();
+            _log.Info("Spawning units...");
+            spawnSw.Start();
+            HousingManager.Instance.SpawnAll(); // Houses need to be spawned before doodads
+            SpawnManager.Instance.SpawnAll();
+            TransferManager.Instance.SpawnAll();
+            spawnSw.Stop();
+            _log.Info("Units spawned in {0}", spawnSw.Elapsed);
+            
+            GameNetwork.Instance.Start();
+            StreamNetwork.Instance.Start();
+            LoginNetwork.Instance.Start();
+            
             stopWatch.Stop();
             _log.Info("Server started! Took {0}", stopWatch.Elapsed);
-
-            return Task.CompletedTask;
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
@@ -137,7 +158,9 @@ namespace AAEmu.Game
             MailManager.Instance.Save();
             ItemManager.Instance.Save();
             */
+            BoatPhysicsManager.Instance.Stop();
 
+            TickManager.Instance.Stop();
             TimeManager.Instance.Stop();
             return Task.CompletedTask;
         }

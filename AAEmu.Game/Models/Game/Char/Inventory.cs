@@ -31,6 +31,7 @@ namespace AAEmu.Game.Models.Game.Char
         public ItemContainer Warehouse { get; private set; }
         public ItemContainer MailAttachments { get; private set; }
         public ItemContainer SystemContainer { get; private set; }
+        public ulong PreviousBackPackItemId { get; set; } // used to re-equip glider when putting backpacks down
 
         public Inventory(Character owner)
         {
@@ -336,7 +337,7 @@ namespace AAEmu.Game.Models.Game.Char
                 mainHandWeapon = Equipment.GetItemBySlot((int)EquipmentItemSlot.Mainhand);
                 offHandWeapon = Equipment.GetItemBySlot((int)EquipmentItemSlot.Offhand);
                 // Check for equipping weapons by swapping (and if it's a 2-handed one)
-                var isFromNon2HWeapon = false;
+                //var isFromNon2HWeapon = false;
                 var isFrom2H = false;
                 if ((fromItem != null) && (fromItem.Template is WeaponTemplate weaponFrom))
                 {
@@ -349,14 +350,14 @@ namespace AAEmu.Game.Models.Game.Char
                         case EquipmentItemSlotType.Offhand:
                         case EquipmentItemSlotType.Shield:
                         case EquipmentItemSlotType.OneHanded:
-                            isFromNon2HWeapon = true;
+                            //isFromNon2HWeapon = true;
                             break;
                         default:
                             break;
                     }
                 }
 
-                var isToNon2HWeapon = false;
+                //var isToNon2HWeapon = false;
                 var isTo2H = false;
                 if ((itemInTargetSlot != null) && (itemInTargetSlot.Template is WeaponTemplate weaponTo))
                 {
@@ -369,7 +370,7 @@ namespace AAEmu.Game.Models.Game.Char
                         case EquipmentItemSlotType.Offhand:
                         case EquipmentItemSlotType.Shield:
                         case EquipmentItemSlotType.OneHanded:
-                            isToNon2HWeapon = true;
+                            //isToNon2HWeapon = true;
                             break;
                         default:
                             break;
@@ -561,8 +562,12 @@ namespace AAEmu.Game.Models.Game.Char
             // Move to first available slot
             if (Bag.FreeSlotCount <= 0) 
                 return false;
+
+            SplitOrMoveItem(taskType, backpack.Id, backpack.SlotType, (byte)backpack.Slot, 0, SlotType.Inventory, (byte)Bag.GetUnusedSlot(0));
+            //Bag.AddOrMoveExistingItem(taskType, backpack);
             
-            Bag.AddOrMoveExistingItem(taskType, backpack);
+            if (glidersOnly)
+                PreviousBackPackItemId = backpack.Id ;
 
             return true;
         }

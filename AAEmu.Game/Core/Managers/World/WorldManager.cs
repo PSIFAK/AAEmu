@@ -17,11 +17,19 @@ using AAEmu.Game.Core.Packets.G2C;
 using NLog;
 using InstanceWorld = AAEmu.Game.Models.Game.World.World;
 using AAEmu.Game.Models.Game.Housing;
+using AAEmu.Game.Models.Game.World.Transform;
+using System.Diagnostics;
+using System.Threading.Tasks;
+using AAEmu.Game.Models.Game.Gimmicks;
+using AAEmu.Game.Models.Game.Shipyard;
 
 namespace AAEmu.Game.Core.Managers.World
 {
     public class WorldManager : Singleton<WorldManager>
     {
+        // Default World and Instance ID that will be assigned to all Transforms as a Default value
+        public static readonly uint DefaultWorldId = 1;
+        public static readonly uint DefaultInstanceId = 0;
         private static Logger _log = LogManager.GetCurrentClassLogger();
 
         private Dictionary<uint, InstanceWorld> _worlds;
@@ -35,6 +43,8 @@ namespace AAEmu.Game.Core.Managers.World
         private readonly ConcurrentDictionary<uint, Npc> _npcs;
         private readonly ConcurrentDictionary<uint, Character> _characters;
         private readonly ConcurrentDictionary<uint, AreaShape> _areaShapes;
+        private readonly ConcurrentDictionary<uint, Transfer> _transfers;
+        private readonly ConcurrentDictionary<uint, Gimmick> _gimmicks;
 
         public const int REGION_SIZE = 64;
         public const int CELL_SIZE = 1024 / REGION_SIZE;
@@ -54,6 +64,37 @@ namespace AAEmu.Game.Core.Managers.World
             _npcs = new ConcurrentDictionary<uint, Npc>();
             _characters = new ConcurrentDictionary<uint, Character>();
             _areaShapes = new ConcurrentDictionary<uint, AreaShape>();
+            _transfers = new ConcurrentDictionary<uint, Transfer>();
+            _gimmicks = new ConcurrentDictionary<uint, Gimmick>();
+        }
+
+        public void ActiveRegionTick(TimeSpan delta)
+        {
+            //Unused right now. Make this a sanity check?
+            var sw = new Stopwatch();
+            sw.Start();
+            var activeRegions = new HashSet<Region>();
+            foreach(var world in _worlds.Values)
+            {
+                foreach(var region in world.Regions)
+                {
+                    if (region == null)
+                        continue;
+                    if (activeRegions.Contains(region))
+                        continue;
+                    //region.HasPlayerActivity = false;
+                    if (!region.IsEmpty())
+                    {
+                        foreach(var activeRegion in region.GetNeighbors())
+                        {
+                            //activeRegion.HasPlayerActivity = true;
+                            activeRegions.Add(activeRegion);
+                        }
+                    }
+                }
+            }
+            sw.Stop();
+            _log.Warn("ActiveRegionTick took {0}ms", sw.ElapsedMilliseconds);
         }
 
         public WorldInteractionGroup? GetWorldInteractionGroup(uint worldInteractionType)
@@ -73,7 +114,7 @@ namespace AAEmu.Game.Core.Managers.World
 
             #region FileManager
 
-            var pathFile = $"{FileManager.AppPath}Data/worlds.json";
+            var pathFile = Path.Combine(FileManager.AppPath, "Data", "worlds.json");
             var contents = FileManager.GetFileContents(pathFile);
             if (string.IsNullOrWhiteSpace(contents))
                 throw new IOException($"File {pathFile} doesn't exists or is empty.");
@@ -98,10 +139,14 @@ namespace AAEmu.Game.Core.Managers.World
 
             foreach (var world in _worlds.Values)
             {
-                pathFile = $"{FileManager.AppPath}Data/Worlds/{world.Name}/zones.json";
+                pathFile = Path.Combine(FileManager.AppPath,"Data","Worlds",world.Name,"zones.json");
+                
+                if (!File.Exists(pathFile))
+                    throw new IOException($"File {pathFile} doesn't exists!");
+                
                 contents = FileManager.GetFileContents(pathFile);
                 if (string.IsNullOrWhiteSpace(contents))
-                    throw new IOException($"File {pathFile} doesn't exists or is empty.");
+                    throw new IOException($"File {pathFile} is empty.");
 
                 if (JsonHelper.TryDeserializeObject(contents, out List<ZoneConfig> zones, out _))
                     foreach (var zone in zones)
@@ -124,63 +169,6 @@ namespace AAEmu.Game.Core.Managers.World
                 else
                     throw new Exception($"WorldManager: Parse {pathFile} file");
             }
-
-            if (AppConfiguration.Instance.HeightMapsEnable) // TODO fastboot if HeightMapsEnable = false!
-            {
-                _log.Info("Loading heightmaps...");
-
-                foreach (var world in _worlds.Values)
-                {
-                    var heightMap = $"{FileManager.AppPath}Data/Worlds/{world.Name}/hmap.dat";
-                    if (!File.Exists(heightMap))
-                    {
-                        _log.Warn($"HeightMap at `{world.Name}` doesn't exists");
-                        continue;
-                    }
-
-                    using (var stream = new FileStream(heightMap, FileMode.Open, FileAccess.Read))
-                    using (var br = new BinaryReader(stream))
-                    {
-                        var version = br.ReadInt32();
-                        if (version == 1)
-                        {
-                            var hMapCellX = br.ReadInt32();
-                            var hMapCellY = br.ReadInt32();
-                            br.ReadDouble(); // heightMaxCoeff
-                            br.ReadInt32(); // count
-
-                            if (hMapCellX == world.CellX && hMapCellY == world.CellY)
-                            {
-                                for (var cellX = 0; cellX < world.CellX; cellX++)
-                                    for (var cellY = 0; cellY < world.CellY; cellY++)
-                                    {
-                                        if (br.ReadBoolean())
-                                            continue;
-                                        for (var i = 0; i < 16; i++)
-                                            for (var j = 0; j < 16; j++)
-                                                for (var x = 0; x < 32; x++)
-                                                    for (var y = 0; y < 32; y++)
-                                                    {
-                                                        var sx = cellX * 512 + i * 32 + x;
-                                                        var sy = cellY * 512 + j * 32 + y;
-
-                                                        world.HeightMaps[sx, sy] = br.ReadUInt16();
-                                                    }
-                                    }
-                            }
-                            else
-                                _log.Warn("{0}: Invalid heightmap cells...", world.Name);
-                        }
-                        else
-                            _log.Warn("{0}: Heightmap not correct version", world.Name);
-                    }
-
-                    _log.Info("Heightmap {0} loaded", world.Name);
-                }
-
-                _log.Info("Heightmaps loaded");
-            }
-
             #endregion
 
             using (var connection = SQLite.CreateConnection())
@@ -199,7 +187,7 @@ namespace AAEmu.Game.Core.Managers.World
                         }
                     }
                 }
-            
+
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = "SELECT * FROM aoe_shapes";
@@ -219,11 +207,76 @@ namespace AAEmu.Game.Core.Managers.World
                     }
                 }
             }
+
+            //TickManager.Instance.OnLowFrequencyTick.Subscribe(ActiveRegionTick, TimeSpan.FromSeconds(5));
+        }
+
+        public void LoadHeightmaps()
+        {
+            if (AppConfiguration.Instance.HeightMapsEnable) // TODO fastboot if HeightMapsEnable = false!
+            {
+                _log.Info("Loading heightmaps...");
+                foreach (var world in _worlds.Values)
+                {
+                    var heightMap = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name, "hmap.dat");
+                    if (!File.Exists(heightMap))
+                    {
+                        _log.Warn($"HeightMap at `{world.Name}` doesn't exists");
+                        continue;
+                    }
+
+                    using (var stream = new FileStream(heightMap, FileMode.Open, FileAccess.Read, FileShare.None, 2 << 20))
+                    using (var br = new BinaryReader(stream))
+                    {
+                        var version = br.ReadInt32();
+                        if (version == 1)
+                        {
+                            var hMapCellX = br.ReadInt32();
+                            var hMapCellY = br.ReadInt32();
+                            br.ReadDouble(); // heightMaxCoeff
+                            br.ReadInt32(); // count
+
+                            if (hMapCellX == world.CellX && hMapCellY == world.CellY)
+                            {
+                                for (var cellX = 0; cellX < world.CellX; cellX++)
+                                {
+                                    for (var cellY = 0; cellY < world.CellY; cellY++)
+                                    {
+                                        if (br.ReadBoolean())
+                                            continue;
+                                        for (var i = 0; i < 16; i++)
+                                            for (var j = 0; j < 16; j++)
+                                                for (var x = 0; x < 32; x++)
+                                                    for (var y = 0; y < 32; y++)
+                                                    {
+                                                        var sx = cellX * 512 + i * 32 + x;
+                                                        var sy = cellY * 512 + j * 32 + y;
+
+                                                        world.HeightMaps[sx, sy] = br.ReadUInt16();
+                                                    }
+                                    }
+                                }
+                            }
+                            else
+                                _log.Warn("{0}: Invalid heightmap cells...", world.Name);
+                        }
+                        else
+                            _log.Warn("{0}: Heightmap not correct version", world.Name);
+                    }
+
+                    _log.Info("Heightmap {0} loaded", world.Name);
+                }
+                _log.Info("Heightmaps loaded");
+
+            }
         }
 
         public InstanceWorld GetWorld(uint worldId)
         {
-            return _worlds.ContainsKey(worldId) ? _worlds[worldId] : null;
+            if (_worlds.TryGetValue(worldId, out var res))
+                return res;
+            _log.Fatal("GetWorld(): No such WorldId {0}",worldId);
+            return null;
         }
 
         public InstanceWorld[] GetWorlds()
@@ -233,15 +286,26 @@ namespace AAEmu.Game.Core.Managers.World
 
         public InstanceWorld GetWorldByZone(uint zoneId)
         {
-            return _worlds[_worldIdByZoneId[zoneId]];
+            if (_worldIdByZoneId.TryGetValue(zoneId, out var worldId))
+                return GetWorld(worldId);
+            _log.Fatal("GetWorldByZone(): No world defined for ZoneId {0}", zoneId);
+            return null;
         }
 
         public uint GetZoneId(uint worldId, float x, float y)
         {
-            var world = _worlds[worldId];
+            if (!_worlds.TryGetValue(worldId, out var world))
+            {
+                _log.Fatal("GetZoneId(): No such WorldId {0}", worldId);
+                return 0;
+            }
             var sx = (int)(x / REGION_SIZE);
             var sy = (int)(y / REGION_SIZE);
-            return world.ZoneIds[sx, sy];
+
+            if ((sx <= (world.CellX * CELL_SIZE)) && (sy <= (world.CellY * CELL_SIZE)) && (sx >= 0) && (sy >= 0))
+                return world.ZoneIds[sx, sy];
+            _log.Fatal("GetZoneId(): Coordicates out of bounds for WorldId {0} - x:{1:#,0.#} - y: {2:#,0.#}",worldId,x,y);
+            return 0;
         }
 
         public float GetHeight(uint zoneId, float x, float y)
@@ -255,6 +319,27 @@ namespace AAEmu.Game.Core.Managers.World
             {
                 return 0f;
             }
+        }
+
+        /// <summary>
+        /// Returns target height of World position of transform according to loaded heightmaps
+        /// </summary>
+        /// <param name="transform"></param>
+        /// <returns>Height at target world transform, or transform.World.Position.Z if no heightmap could be found</returns>
+        public float GetHeight(Transform transform)
+        {
+            if (AppConfiguration.Instance.HeightMapsEnable)
+                try
+                {
+                    var world = GetWorld(transform.WorldId);
+                    return world?.GetHeight(transform.World.Position.X, transform.World.Position.Y) ?? transform.World.Position.Z;
+                }
+                catch
+                {
+                    return 0f;
+                }
+            else
+                return transform.World.Position.Z;
         }
 
         private GameObject GetRootObj(GameObject obj)
@@ -272,13 +357,8 @@ namespace AAEmu.Game.Core.Managers.World
         public Region GetRegion(GameObject obj)
         {
             obj = GetRootObj(obj);
-            InstanceWorld world = GetWorld(obj.Position.WorldId);
-            return GetRegion(world, obj.Position.X, obj.Position.Y);
-        }
-
-        public Region GetRegion(Point point)
-        {
-            return GetRegion(point.ZoneId, point.X, point.Y);
+            InstanceWorld world = GetWorld(obj.Transform.WorldId);
+            return GetRegion(world, obj.Transform.World.Position.X, obj.Transform.World.Position.Y);
         }
 
         public Region[] GetNeighbors(uint worldId, int x, int y)
@@ -294,6 +374,12 @@ namespace AAEmu.Game.Core.Managers.World
             return result.ToArray();
         }
 
+        public GameObject GetGameObject(uint objId)
+        {
+            _objects.TryGetValue(objId, out var ret);
+            return ret;
+        }
+
         public BaseUnit GetBaseUnit(uint objId)
         {
             _baseUnits.TryGetValue(objId, out var ret);
@@ -304,6 +390,18 @@ namespace AAEmu.Game.Core.Managers.World
         {
             _doodads.TryGetValue(objId, out var ret);
             return ret;
+        }
+
+        public Doodad GetDoodadByDbId(uint dbId)
+        {
+            var ret = _doodads.FirstOrDefault(x => x.Value.DbId == dbId).Value;
+            return ret ;
+        }
+
+        public List<Doodad> GetDoodadByHouseDbId(uint houseDbId)
+        {
+            var ret = _doodads.Where(x => x.Value.DbHouseId == houseDbId).Select(y => y.Value).ToList();
+            return ret ;
         }
 
         public Unit GetUnit(uint objId)
@@ -382,6 +480,10 @@ namespace AAEmu.Game.Core.Managers.World
                 _npcs.TryAdd(npc.ObjId, npc);
             if (obj is Character character)
                 _characters.TryAdd(character.ObjId, character);
+            if (obj is Transfer transfer)
+                _transfers.TryAdd(transfer.ObjId, transfer);
+            if (obj is Gimmick gimmick)
+                _gimmicks.TryAdd(gimmick.ObjId, gimmick);
         }
 
         public void RemoveObject(GameObject obj)
@@ -401,6 +503,10 @@ namespace AAEmu.Game.Core.Managers.World
                 _npcs.TryRemove(obj.ObjId, out _);
             if (obj is Character)
                 _characters.TryRemove(obj.ObjId, out _);
+            if (obj is Transfer)
+                _transfers.TryRemove(obj.ObjId, out _);
+            if (obj is Gimmick)
+                _gimmicks.TryRemove(obj.ObjId, out _);
         }
 
         public void AddVisibleObject(GameObject obj)
@@ -408,14 +514,16 @@ namespace AAEmu.Game.Core.Managers.World
             if (obj == null || !obj.IsVisible)
                 return;
 
-            var region = GetRegion(obj);
-            var currentRegion = obj.Region;
+            var region = GetRegion(obj); // Get region of Object or it's Root object if it has one
+            var currentRegion = obj.Region; // Current Region this object is in
 
+            // If region didn't change, ignore
             if (region == null || currentRegion != null && currentRegion.Equals(region))
                 return;
 
             if (currentRegion == null)
             {
+                // If no currentRegion, add it (happens on new spawns)
                 foreach (var neighbor in region.GetNeighbors())
                     neighbor.AddToCharacters(obj);
 
@@ -424,9 +532,11 @@ namespace AAEmu.Game.Core.Managers.World
             }
             else
             {
+                // No longer in the same region, update things
                 var oldNeighbors = currentRegion.GetNeighbors();
                 var newNeighbors = region.GetNeighbors();
 
+                // Remove visibility from oldNeighbors
                 foreach (var neighbor in oldNeighbors)
                 {
                     var remove = true;
@@ -441,6 +551,7 @@ namespace AAEmu.Game.Core.Managers.World
                         neighbor.RemoveFromCharacters(obj);
                 }
 
+                // Add visibility to newNeighbours
                 foreach (var neighbor in newNeighbors)
                 {
                     var add = true;
@@ -455,11 +566,19 @@ namespace AAEmu.Game.Core.Managers.World
                         neighbor.AddToCharacters(obj);
                 }
 
+                // Add this obj to the new region
                 region.AddObject(obj);
+                // Update it's region
                 obj.Region = region;
 
+                // remove the obj from the old region
                 currentRegion.RemoveObject(obj);
             }
+            
+            // Also show children
+            if (obj?.Transform?.Children.Count > 0)
+                foreach (var child in obj.Transform.Children)
+                    AddVisibleObject(child.GameObject);
         }
 
         public void RemoveVisibleObject(GameObject obj)
@@ -473,6 +592,11 @@ namespace AAEmu.Game.Core.Managers.World
                 neighbor.RemoveFromCharacters(obj);
 
             obj.Region = null;
+            
+            // Also remove children
+            if (obj?.Transform?.Children.Count > 0)
+                foreach (var child in obj.Transform.Children)
+                    RemoveVisibleObject(child.GameObject);
         }
 
         public List<T> GetAround<T>(GameObject obj) where T : class
@@ -496,13 +620,32 @@ namespace AAEmu.Game.Core.Managers.World
             if (useModelSize)
                 radius += obj.ModelSize;
 
-            foreach (var neighbor in obj.Region.GetNeighbors())
-                neighbor.GetList(result, obj.ObjId, obj.Position.X, obj.Position.Y, radius * radius, useModelSize);
+            if (radius > 0.0f && RadiusFitsCurrentRegion(obj, radius))
+            {
+                obj.Region.GetList(result, obj.ObjId, obj.Transform.World.Position.X, obj.Transform.World.Position.Y, radius * radius, useModelSize);
+            }
+            else
+            {
+                foreach (var neighbor in obj.Region.GetNeighbors())
+                    neighbor.GetList(result, obj.ObjId, obj.Transform.World.Position.X, obj.Transform.World.Position.Y, radius * radius, useModelSize);
+            }
 
             return result;
         }
 
-        public List<T> GetAroundByShape<T>(GameObject obj, AreaShape shape) where T : class
+        private bool RadiusFitsCurrentRegion(GameObject obj, float radius)
+        {
+            var xMod = obj.Transform.World.Position.X % REGION_SIZE;
+            if (xMod - radius < 0 || xMod + radius > REGION_SIZE)
+                return false; 
+            
+            var yMod = obj.Transform.World.Position.Y % REGION_SIZE;
+            if (yMod - radius < 0 || yMod + radius > REGION_SIZE)
+                return false;
+            return true;
+        }
+
+        public List<T> GetAroundByShape<T>(GameObject obj, AreaShape shape) where T : GameObject
         {
             if (shape.Value1 == 0 && shape.Value2 == 0 && shape.Value3 == 0)
                 _log.Warn("AreaShape with no size values was used");
@@ -512,17 +655,17 @@ namespace AAEmu.Game.Core.Managers.World
                 var height = shape.Value2;
                 return GetAround<T>(obj, radius, true);
             }
-            else if(shape.Type == AreaShapeType.Cuboid)
+
+            if(shape.Type == AreaShapeType.Cuboid)
             {
                 var diagonal = Math.Sqrt(shape.Value1 * shape.Value1 + shape.Value2 * shape.Value2);
-                _log.Warn("AreaShape[Cuboid] Not Implemented.");
-                return GetAround<T>(obj, (float) diagonal, true);
+                var res = GetAround<T>(obj, (float) diagonal, true);
+                res = shape.ComputeCuboid(obj, res);
+                return res;
             }
-            else
-            {
-                _log.Error("AreaShape had impossible type");
-                throw new ArgumentNullException("AreaShape type does not exist!");
-            }
+
+            _log.Error("AreaShape had impossible type");
+            throw new ArgumentNullException("AreaShape type does not exist!");
         }
 
         public List<T> GetInCell<T>(uint worldId, int x, int y) where T : class
@@ -574,7 +717,7 @@ namespace AAEmu.Game.Core.Managers.World
             var validZones = ZoneManager.Instance.GetZoneKeysInZoneGroupById(zoneGroupId);
             foreach (var character in _characters.Values)
             {
-                if (!validZones.Contains(character.Position.ZoneId))
+                if (!validZones.Contains(character.Transform.ZoneId))
                     continue;
                 character.SendPacket(packet);
             }
@@ -605,7 +748,7 @@ namespace AAEmu.Game.Core.Managers.World
 
         private bool ValidRegion(uint worldId, int x, int y)
         {
-            var world = _worlds[worldId];
+            var world = GetWorld(worldId);
             return world.ValidRegion(x, y);
         }
 
@@ -613,14 +756,14 @@ namespace AAEmu.Game.Core.Managers.World
         {
             //turn snow on off 
             Snow(character);
-           
+
             //family stuff
             if (character.Family > 0)
             {
                 FamilyManager.Instance.OnCharacterLogin(character);
             }
         }
-        
+
         public void Snow(Character character)
         {
             //send the char the packet
@@ -634,18 +777,14 @@ namespace AAEmu.Game.Core.Managers.World
             var stuffs = WorldManager.Instance.GetAround<Unit>(character, 1000f);
             foreach (var stuff in stuffs)
             {
-                if (stuff is House)
-                    character.SendPacket(new SCHouseStatePacket((House)stuff));
-                else
-                if (stuff is Unit)
-                    character.SendPacket(new SCUnitStatePacket((Unit)stuff));
+                stuff.AddVisibleObject(character);
             }
 
             var doodads = WorldManager.Instance.GetAround<Doodad>(character, 1000f).ToArray();
-            for (var i = 0; i < doodads.Length; i += 30)
+            for (var i = 0; i < doodads.Length; i += SCDoodadsCreatedPacket.MaxCountPerPacket)
             {
                 var count = doodads.Length - i;
-                var temp = new Doodad[count <= 30 ? count : 30];
+                var temp = new Doodad[count <= SCDoodadsCreatedPacket.MaxCountPerPacket ? count : SCDoodadsCreatedPacket.MaxCountPerPacket];
                 Array.Copy(doodads, i, temp, 0, temp.Length);
                 character.SendPacket(new SCDoodadsCreatedPacket(temp));
             }
@@ -654,6 +793,11 @@ namespace AAEmu.Game.Core.Managers.World
         public List<Character> GetAllCharacters()
         {
             return _characters.Values.ToList();
+        }
+
+        public List<Npc> GetAllNpcs()
+        {
+            return _npcs.Values.ToList();
         }
         
         public AreaShape GetAreaShapeById(uint id)

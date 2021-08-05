@@ -1,4 +1,4 @@
-using AAEmu.Game.Models.Game.DoodadObj.Templates;
+﻿using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Units;
 
 namespace AAEmu.Game.Models.Game.DoodadObj.Funcs
@@ -7,10 +7,13 @@ namespace AAEmu.Game.Models.Game.DoodadObj.Funcs
     {
         public bool Flag { get; set; }
         public uint NextPhase { get; set; }
-        
+
         public override void Use(Unit caster, Doodad owner, uint skillId, int nextPhase = 0)
         {
             _log.Debug("DoodadFuncPulseTrigger");
+            if (Flag && nextPhase == 1)
+                owner.GoToPhase(null, (int)NextPhase);
+            owner.ToPhaseAndUse = false;
         }
     }
 }

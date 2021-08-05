@@ -1,8 +1,9 @@
 ﻿using System;
-using System.Threading;
 using AAEmu.Commons.Network;
-using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Network.Connections;
+using AAEmu.Game.Core.Packets.C2G;
+using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Core.Packets.Proxy;
 
 namespace AAEmu.Game.Core.Network.Game
 {
@@ -52,35 +53,40 @@ namespace AAEmu.Game.Core.Network.Game
             }
 
             // SC here you can set the filter to hide packets
-            if (!(TypeId == 0x013 && Level == 2) && // Pong
-                !(TypeId == 0x016 && Level == 2) && // FastPong
-                !(TypeId == 0x06B && Level == 1) && // SCUnitMovements
-                !(TypeId == 0x06C && Level == 1)) // SCOneUnitMovement
+            if (!(TypeId == PPOffsets.PongPacket && Level == 2) &&
+                !(TypeId == PPOffsets.FastPongPacket && Level == 2) &&
+                !(TypeId == SCOffsets.SCUnitMovementsPacket && Level == 1) &&
+                !(TypeId == SCOffsets.SCOneUnitMovementPacket && Level == 1) &&
+                !(TypeId == SCOffsets.SCGimmickMovementPacket && Level == 1) &&
+                !(TypeId == SCOffsets.SCTransferTelescopeUnitsPacket && Level == 1))
             {
                 //_log.Debug("GamePacket: S->C type {0:X} {2}\n{1}", TypeId, ps, this.ToString().Substring(23));
-                _log.Trace("GamePacket: S->C type {0:X3} {1}", TypeId, this.ToString().Substring(23));
-
+                //_log.Trace("GamePacket: S->C type {0:X3} {1}", TypeId, this.ToString().Substring(23));
+                _log.Debug("GamePacket: S->C type {0:X3} {1}{2}", TypeId, ToString().Substring(23), Verbose());
             }
             return ps;
         }
 
         public override PacketBase<GameConnection> Decode(PacketStream ps)
         {
-            // CS here you can set the filter to hide packets
-            if (!(TypeId == 0x012 && Level == 2) && // Ping
-                !(TypeId == 0x015 && Level == 2) && // FastPing
-                !(TypeId == 0x089 && Level == 1)) // CSMoveUnit
-            {
-                //_log.Debug("GamePacket: C->S type {0:X} {2}\n{1}", TypeId, ps, this.ToString().Substring(23));
-                _log.Trace("GamePacket: C->S type {0:X3} {1}", TypeId, this.ToString().Substring(23));
-            }
             try
             {
                 Read(ps);
+                // CS here you can set the filter to hide packets
+                if (!(TypeId == PPOffsets.PingPacket && Level == 2) &&
+                    !(TypeId == PPOffsets.FastPingPacket && Level == 2) &&
+                    !(TypeId == CSOffsets.CSMoveUnitPacket && Level == 1)
+                )
+                {
+                    //_log.Debug("GamePacket: C->S type {0:X} {2}\n{1}", TypeId, ps, this.ToString().Substring(23));
+                    //_log.Trace("GamePacket: C->S type {0:X3} {1}", TypeId, this.ToString().Substring(23));
+                    _log.Debug("GamePacket: C->S type {0:X3} {1}{2}", TypeId, ToString().Substring(23),Verbose());
+                }
                 Execute();
             }
             catch (Exception ex)
             {
+                _log.Error("GamePacket: C->S type {0:X3} {1}", TypeId, ToString().Substring(23));
                 _log.Fatal(ex);
                 throw;
             }

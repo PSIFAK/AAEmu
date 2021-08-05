@@ -18,6 +18,7 @@ using AAEmu.Game.Utils.DB;
 using AAEmu.Game.Models.Game.Chat;
 using NLog;
 using AAEmu.Game.Models.Game.Items.Actions;
+using AAEmu.Game.Utils;
 using MySql.Data.MySqlClient;
 
 namespace AAEmu.Game.Core.Managers.UnitManagers
@@ -407,38 +408,38 @@ namespace AAEmu.Game.Core.Managers.UnitManagers
                 }
             }
 
-            var content = FileManager.GetFileContents($"{FileManager.AppPath}Data/CharTemplates.json");
+            var filePath = Path.Combine(FileManager.AppPath, "Data", "CharTemplates.json");
+            var content = FileManager.GetFileContents(filePath);
             if (string.IsNullOrWhiteSpace(content))
-                throw new IOException(
-                    $"File {FileManager.AppPath + "Data/CharTemplates.json"} doesn't exists or is empty.");
+                throw new IOException($"File {filePath} doesn't exists or is empty.");
 
             if (JsonHelper.TryDeserializeObject(content, out List<CharacterTemplateConfig> charTemplates, out _))
             {
                 foreach (var charTemplate in charTemplates)
                 {
-                    var point = new Point(charTemplate.Pos.X, charTemplate.Pos.Y, charTemplate.Pos.Z);
-                    point.WorldId = charTemplate.Pos.WorldId;
-                    point.ZoneId = WorldManager
-                        .Instance
-                        .GetZoneId(charTemplate.Pos.WorldId, charTemplate.Pos.X, charTemplate.Pos.Y); // TODO ...
-                    
-                    point.RotationX = charTemplate.Pos.RotationX;
-                    point.RotationY = charTemplate.Pos.RotationY;
-                    point.RotationZ = charTemplate.Pos.RotationZ;
-                    
+                    var point = charTemplate.Pos.Clone();
+                    // Recalculate ZoneId as this isn't included in the config
+                    point.ZoneId = WorldManager.Instance.GetZoneId(charTemplate.Pos.WorldId, charTemplate.Pos.X, charTemplate.Pos.Y);
+                    // Convert the json's degrees to rads
+                    point.Roll = point.Roll.DegToRad();
+                    point.Pitch = point.Pitch.DegToRad();
+                    point.Yaw = point.Yaw.DegToRad();
+
+                    // Males
                     var template = _templates[(byte)(16 + charTemplate.Id)];
-                    template.Position = point;
+                    template.SpawnPosition = point;
                     template.NumInventorySlot = charTemplate.NumInventorySlot;
                     template.NumBankSlot = charTemplate.NumBankSlot;
 
+                    // Females
                     template = _templates[(byte)(32 + charTemplate.Id)];
-                    template.Position = point;
+                    template.SpawnPosition = point;
                     template.NumInventorySlot = charTemplate.NumInventorySlot;
                     template.NumBankSlot = charTemplate.NumBankSlot;
                 }
             }
             else
-                throw new Exception($"CharacterManager: Parse {FileManager.AppPath + "Data/CharTemplates.json"} file");
+                throw new Exception($"CharacterManager: Error parsing {filePath} file");
 
             Log.Info("Loaded {0} character templates", _templates.Count);
         }
@@ -467,17 +468,16 @@ namespace AAEmu.Game.Core.Managers.UnitManagers
                 character.Name = name.Substring(0, 1).ToUpper() + name.Substring(1);
                 character.Race = (Race) race;
                 character.Gender = (Gender) gender;
-                character.Position = template.Position.Clone();
-                character.Position.ZoneId = template.ZoneId;
+                character.Transform.ApplyWorldSpawnPosition(template.SpawnPosition);
                 character.Level = 1;
                 character.Faction = FactionManager.Instance.GetFaction(template.FactionId);
                 character.FactionName = "";
                 character.LaborPower = 50;
-                character.LaborPowerModified = DateTime.UtcNow;
+                character.LaborPowerModified = DateTime.Now;
                 character.NumInventorySlots = template.NumInventorySlot;
                 character.NumBankSlots = template.NumBankSlot;
                 character.Inventory = new Inventory(character);
-                character.Updated = DateTime.UtcNow;
+                character.Updated = DateTime.Now;
                 character.Ability1 = (AbilityType) ability1;
                 character.Ability2 = AbilityType.None;
                 character.Ability3 = AbilityType.None;
@@ -604,7 +604,7 @@ namespace AAEmu.Game.Core.Managers.UnitManagers
                         {
                             // Skip this char in the list if it's read to be deleted
                             var deleteTime = reader.GetDateTime("delete_time");
-                            if ((deleteTime > DateTime.MinValue) && (deleteTime < DateTime.UtcNow))
+                            if ((deleteTime > DateTime.MinValue) && (deleteTime < DateTime.Now))
                                 continue;
 
                             var character = new LoginCharacterInfo();
